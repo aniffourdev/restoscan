@@ -1,61 +1,69 @@
-'use client'
+"use client"
 
-import dynamic from 'next/dynamic'
-import { useRouter } from 'next/navigation'
-import { useEffect, useState } from 'react'
-
-// Dynamically import QR Reader to avoid SSR issues
-const QrReader = dynamic(
-  () => import('react-qr-reader').then(mod => mod.QrReader),
-  { ssr: false }
-)
+import { useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 
 export default function QRScanner() {
   const router = useRouter()
-  const [cameraAllowed, setCameraAllowed] = useState(false)
+  const scannerRef = useRef<HTMLDivElement>(null)
+  const html5QrCodeRef = useRef<any>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // Ask for camera permission when component mounts
-    navigator.mediaDevices
-      .getUserMedia({ video: true })
-      .then(() => setCameraAllowed(true))
-      .catch((err) => {
-        console.error('Camera permission denied', err)
-        alert('Camera access is required to scan the QR code.')
-      })
-  }, [])
-
-  const handleScan = (data: string | null) => {
-    if (data) {
-      // Optionally decode data here
-      router.push('/menu')
+    let isMounted = true
+    let Html5Qrcode: any
+    try {
+      Html5Qrcode = require("html5-qrcode").Html5Qrcode
+    } catch (err) {
+      setError("Failed to load QR scanner library.")
+      return
     }
-  }
+    if (!isMounted || !scannerRef.current) return
+    const html5QrCode = new Html5Qrcode("qr-reader")
+    html5QrCodeRef.current = html5QrCode
+    html5QrCode.start(
+      { facingMode: "environment" },
+      {
+        fps: 10,
+        qrbox: 250,
+      },
+      (decodedText: string) => {
+        html5QrCode.stop().then(() => {
+          router.push("/menu")
+        })
+      },
+      (error: any) => {
+        // Optionally handle scan errors
+      }
+    ).catch((err: any) => {
+      setError("No camera found or camera access denied.")
+    })
+    return () => {
+      isMounted = false
+      if (html5QrCodeRef.current) {
+        html5QrCodeRef.current.stop().catch(() => {})
+      }
+    }
+  }, [router])
 
-  const handleError = (err: any) => {
-    console.error('QR Scan error:', err)
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center">
+        <h1 className="text-gold text-2xl mb-4">Scan the QR Code</h1>
+        <p className="text-red-400">{error}</p>
+      </div>
+    )
   }
 
   return (
-    <div className="text-center">
-      <h1 className="text-gold text-2xl mb-4">Scan Your QR Code</h1>
-
-      {cameraAllowed ? (
-        <div className="border-4 border-gold rounded-lg overflow-hidden w-full max-w-md mx-auto">
-          <div style={{ width: '100%' }}>
-            <QrReader
-              onResult={(result, error) => {
-                if (result?.getText()) handleScan(result.getText());
-                if (error) handleError(error);
-              }}
-              constraints={{ facingMode: 'environment' }}
-              
-            />
-          </div>
-        </div>
-      ) : (
-        <p className="text-red-400">Waiting for camera permission...</p>
-      )}
+    <div className="flex flex-col items-center justify-center">
+      <h1 className="text-gold text-2xl mb-4">Scan the QR Code</h1>
+      <div
+        id="qr-reader"
+        ref={scannerRef}
+        className="rounded-lg border-4 border-gold bg-black"
+        style={{ width: 300, height: 300 }}
+      />
     </div>
   )
 }
